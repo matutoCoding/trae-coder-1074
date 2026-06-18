@@ -178,27 +178,85 @@ export const bookingService = {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todayBookings = store.bookings.filter(b => {
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay() + 1);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    const confirmedBookings = store.bookings.filter(b => b.status === 'confirmed');
+
+    const todayBookings = confirmedBookings.filter(b => {
       const start = new Date(b.startTime);
-      return start >= today && start < tomorrow && b.status === 'confirmed';
+      return start >= today && start < tomorrow;
     });
+
+    const weekBookings = confirmedBookings.filter(b => {
+      const start = new Date(b.startTime);
+      return start >= startOfWeek && start < endOfWeek;
+    });
+
+    const todayHours = todayBookings.reduce((sum, b) => {
+      const hours = (new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / (1000 * 60 * 60);
+      return sum + hours;
+    }, 0);
+
+    const weekHours = weekBookings.reduce((sum, b) => {
+      const hours = (new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / (1000 * 60 * 60);
+      return sum + hours;
+    }, 0);
+
+    const activeWalls = store.walls.filter(w => w.status === 'active');
+    const todayWallCapacity = activeWalls.length * 13;
+    const weekWallCapacity = activeWalls.length * 13 * 7;
+
+    const todayUtilization = todayWallCapacity > 0 ? Math.round((todayHours / todayWallCapacity) * 100) : 0;
+    const weekUtilization = weekWallCapacity > 0 ? Math.round((weekHours / weekWallCapacity) * 100) : 0;
+
+    const wallBookingCount: Record<string, { count: number; hours: number; name: string }> = {};
+    for (const b of confirmedBookings) {
+      if (!wallBookingCount[b.wallId]) {
+        const wall = store.walls.find(w => w.id === b.wallId);
+        wallBookingCount[b.wallId] = { count: 0, hours: 0, name: wall?.name || '未知' };
+      }
+      wallBookingCount[b.wallId].count++;
+      wallBookingCount[b.wallId].hours += (new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / (1000 * 60 * 60);
+    }
+    const popularWalls = Object.entries(wallBookingCount)
+      .map(([wallId, data]) => ({ wallId, ...data }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const teamConsumption: Record<string, { teamId: string; name: string; usedCredits: number; totalCredits: number }> = {};
+    for (const t of store.teams) {
+      teamConsumption[t.id] = { teamId: t.id, name: t.name, usedCredits: t.usedCredits, totalCredits: t.totalCredits };
+    }
+    const teamRanking = Object.values(teamConsumption)
+      .sort((a, b) => b.usedCredits - a.usedCredits);
+
+    const totalRentedOut = store.equipmentRentals.filter(r => !r.returnedAt)
+      .reduce((sum, r) => sum + r.quantity, 0);
+
+    const activeRentals = store.equipmentRentals.filter(r => !r.returnedAt).length;
 
     const totalCreditsUsed = store.teams.reduce((sum, t) => sum + t.usedCredits, 0);
     const totalCredits = store.teams.reduce((sum, t) => sum + t.totalCredits, 0);
 
-    const activeWalls = store.walls.filter(w => w.status === 'active').length;
-
-    const activeRentals = store.equipmentRentals.filter(r => !r.returnedAt).length;
-
     return {
       todayBookings: todayBookings.length,
+      weekBookings: weekBookings.length,
       totalBookings: store.bookings.length,
       totalTeams: store.teams.length,
-      activeWalls,
+      activeWalls: activeWalls.length,
       totalCredits,
       usedCredits: totalCreditsUsed,
       availableCredits: totalCredits - totalCreditsUsed,
       activeRentals,
+      todayUtilization,
+      weekUtilization,
+      popularWalls,
+      teamRanking,
+      totalRentedOut,
     };
   },
 };

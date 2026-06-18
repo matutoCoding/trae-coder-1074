@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
-import { ChevronLeft, ChevronRight, Plus, Clock, Users, Layers, HardHat, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Clock, Layers, HardHat, Check, AlertTriangle, ArrowRight, RefreshCw } from 'lucide-react';
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
+const CREDITS_PER_HOUR = 10;
 
 export default function Schedule() {
   const {
@@ -15,7 +17,12 @@ export default function Schedule() {
     fetchTeams,
     fetchEquipment,
     createBooking,
+    fetchAvailableSlots,
+    selectedTeam,
+    setSelectedTeam,
   } = useAppStore();
+
+  const navigate = useNavigate();
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedWall, setSelectedWall] = useState<string>('');
@@ -26,6 +33,9 @@ export default function Schedule() {
   const [bookingTeamId, setBookingTeamId] = useState('');
   const [selectedEquipment, setSelectedEquipment] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string>('');
+  const [availableSlots, setAvailableSlots] = useState<{ start: string; end: string }[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
     fetchWalls();
@@ -35,9 +45,9 @@ export default function Schedule() {
 
   useEffect(() => {
     if (selectedWall) {
-      fetchOccupancies({ wallId: selectedWall, date: currentDate.toISOString() });
+      fetchOccupancies({ wallId: selectedWall });
     }
-  }, [selectedWall, currentDate, fetchOccupancies]);
+  }, [selectedWall, fetchOccupancies]);
 
   useEffect(() => {
     if (walls.length > 0 && !selectedWall) {
@@ -87,13 +97,15 @@ export default function Schedule() {
   const handleSlotMouseUp = () => {
     if (isSelecting && selectedSlot) {
       setSelectedEquipment({});
+      setBookingError('');
+      setAvailableSlots([]);
       setShowBookingModal(true);
     }
     setIsSelecting(false);
     setSelectionStart(null);
   };
 
-  const getOccupanciesForSlot = (date: Date, hour: number) => {
+  const getOccupanciesForSlot = useCallback((date: Date, hour: number) => {
     return occupancies.filter((occ) => {
       const occStart = new Date(occ.startTime);
       const occEnd = new Date(occ.endTime);
@@ -103,7 +115,7 @@ export default function Schedule() {
       slotEnd.setHours(hour + 1, 0, 0, 0);
       return slotStart < occEnd && slotEnd > occStart;
     });
-  };
+  }, [occupancies]);
 
   const isSlotInSelection = (hour: number, dayIdx: number) => {
     if (!selectedSlot) return false;
@@ -136,9 +148,47 @@ export default function Schedule() {
     }
   };
 
+  const handleGoToCredits = (teamId: string) => {
+    const team = teams.find((t) => t.id === teamId);
+    if (team) {
+      setSelectedTeam(team);
+    }
+    navigate('/credits');
+  };
+
+  const loadAvailableSlots = async () => {
+    if (!selectedWall || !selectedSlot) return;
+    const date = weekDays[selectedSlot.dayIdx];
+    const dateStr = date.toISOString().split('T')[0];
+    const duration = selectedSlot.end - selectedSlot.start;
+    setLoadingSlots(true);
+    try {
+      const slots = await fetchAvailableSlots(selectedWall, dateStr, duration);
+      setAvailableSlots(slots);
+    } catch {
+      setAvailableSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
+  const handleSelectAvailableSlot = (slot: { start: string; end: string }) => {
+    const startDate = new Date(slot.start);
+    const endDate = new Date(slot.end);
+    setSelectedSlot({
+      start: startDate.getHours(),
+      end: endDate.getHours(),
+      dayIdx: selectedSlot!.dayIdx,
+    });
+    setBookingError('');
+    setAvailableSlots([]);
+  };
+
   const handleCreateBooking = async () => {
     if (!selectedSlot || !selectedWall || !bookingTeamId) return;
     setSubmitting(true);
+    setBookingError('');
+    setAvailableSlots([]);
 
     const date = weekDays[selectedSlot.dayIdx];
     const startTime = new Date(date);
@@ -162,9 +212,12 @@ export default function Schedule() {
       setShowBookingModal(false);
       setSelectedSlot(null);
       setSelectedEquipment({});
-      fetchEquipment();
     } catch (err: any) {
-      alert(err.message);
+      const errMsg = err.message || '';
+      setBookingError(errMsg);
+      if (errMsg.includes('占用')) {
+        loadAvailableSlots();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -172,6 +225,16 @@ export default function Schedule() {
 
   const selectedWallData = walls.find((w) => w.id === selectedWall);
   const selectedBookingTeam = teams.find((t) => t.id === bookingTeamId);
+  const requiredCredits = selectedSlot ? (selectedSlot.end - selectedSlot.start) * CREDITS_PER_HOUR : 0;
+  const teamAvailableCredits = selectedBookingTeam
+    ? selectedBookingTeam.totalCredits - selectedBookingTeam.usedCredits
+    : 0;
+  const isBalanceInsufficient = teamAvailableCredits < requiredCredits;
+
+  const occupancyStartsAtHour = (occ: any, date: Date, hour: number) => {
+    const occStart = new Date(occ.startTime);
+    return occStart.getHours() === hour && occStart.toDateString() === date.toDateString();
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn h-full flex flex-col">
@@ -277,7 +340,7 @@ export default function Schedule() {
                       onMouseDown={() => !occupied && handleSlotMouseDown(hour, dayIdx)}
                       onMouseEnter={() => !occupied && handleSlotMouseEnter(hour, dayIdx)}
                     >
-                      {occ && isSlotOccupied(day, hour) && new Date(occ.startTime).getHours() === hour && (
+                      {occ && occupied && occupancyStartsAtHour(occ, day, hour) && (
                         <div
                           className={`absolute inset-x-1 top-1 bottom-1 rounded px-2 py-1 text-xs overflow-hidden z-[1] ${
                             occ.isMerged
@@ -367,16 +430,99 @@ export default function Schedule() {
                 <div className="flex justify-between text-sm pt-2 border-t border-slate-600/50">
                   <span className="text-slate-400">消耗额度</span>
                   <span className="font-bold text-orange-400 text-lg">
-                    {(selectedSlot.end - selectedSlot.start) * 10} 额度
+                    {requiredCredits} 额度
                   </span>
                 </div>
               </div>
+
+              {isBalanceInsufficient && selectedBookingTeam && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-red-400 font-medium">
+                    <AlertTriangle className="w-5 h-5" />
+                    余额不足
+                  </div>
+                  <p className="text-sm text-red-300/70 mt-1">
+                    当前团队可用额度 {teamAvailableCredits}，需要 {requiredCredits} 额度
+                  </p>
+                  <button
+                    onClick={() => handleGoToCredits(bookingTeamId)}
+                    className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-sm rounded-lg transition-colors font-medium"
+                  >
+                    前往充值
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {bookingError && bookingError.includes('额度不足') && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-amber-400 font-medium">
+                    <AlertTriangle className="w-5 h-5" />
+                    额度不足
+                  </div>
+                  <p className="text-sm text-amber-300/70 mt-1">
+                    团队额度不足以完成本次预约，请充值后再试
+                  </p>
+                  <button
+                    onClick={() => handleGoToCredits(bookingTeamId)}
+                    className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-sm rounded-lg transition-colors font-medium"
+                  >
+                    前往充值
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {bookingError && bookingError.includes('占用') && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-rose-400 font-medium">
+                    <AlertTriangle className="w-5 h-5" />
+                    该时段已被占用
+                  </div>
+                  <p className="text-sm text-rose-300/70 mt-1">
+                    所选时段与其他预约冲突，请选择其他可用时段
+                  </p>
+                  {loadingSlots && (
+                    <div className="flex items-center gap-2 mt-3 text-sm text-slate-400">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      正在查找可用时段...
+                    </div>
+                  )}
+                  {!loadingSlots && availableSlots.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm text-slate-300 font-medium">可用时段：</p>
+                      <div className="flex flex-wrap gap-2">
+                        {availableSlots.map((slot, idx) => {
+                          const s = new Date(slot.start);
+                          const e = new Date(slot.end);
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleSelectAvailableSlot(slot)}
+                              className="px-3 py-2 bg-slate-700/50 hover:bg-orange-500/20 border border-slate-600 hover:border-orange-500/30 rounded-lg text-sm transition-colors"
+                            >
+                              {s.getHours()}:00 - {e.getHours()}:00
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {!loadingSlots && availableSlots.length === 0 && bookingError.includes('占用') && (
+                    <p className="text-sm text-slate-400 mt-2">暂无可用时段</p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">选择团队</label>
                 <select
                   value={bookingTeamId}
-                  onChange={(e) => setBookingTeamId(e.target.value)}
+                  onChange={(e) => {
+                    setBookingTeamId(e.target.value);
+                    setBookingError('');
+                    setAvailableSlots([]);
+                  }}
                   className="w-full px-4 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg focus:outline-none focus:border-orange-500"
                 >
                   {teams.length === 0 && <option value="">加载中...</option>}
@@ -388,7 +534,7 @@ export default function Schedule() {
                 </select>
                 {selectedBookingTeam && (
                   <div className="mt-1.5 text-xs text-slate-500">
-                    预约后可用余额将变为：{selectedBookingTeam.totalCredits - selectedBookingTeam.usedCredits - (selectedSlot.end - selectedSlot.start) * 10} 额度
+                    预约后可用余额将变为：{teamAvailableCredits - requiredCredits} 额度
                   </div>
                 )}
               </div>
@@ -481,6 +627,8 @@ export default function Schedule() {
                     setShowBookingModal(false);
                     setSelectedSlot(null);
                     setSelectedEquipment({});
+                    setBookingError('');
+                    setAvailableSlots([]);
                   }}
                   className="flex-1 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
                 >

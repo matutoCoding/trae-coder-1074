@@ -63,6 +63,16 @@ router.get('/rentals/active', (req: Request, res: Response) => {
   res.json({ success: true, data: rentals });
 });
 
+router.get('/rentals/all', (req: Request, res: Response) => {
+  const { teamId, equipmentType, status } = req.query;
+  const rentals = equipmentService.getAllRentals({
+    teamId: teamId ? String(teamId) : undefined,
+    equipmentType: equipmentType ? String(equipmentType) : undefined,
+    status: status ? String(status) : undefined,
+  });
+  res.json({ success: true, data: rentals });
+});
+
 router.post('/rentals', async (req: Request, res: Response) => {
   const { equipmentId, bookingId, teamId, quantity } = req.body;
   

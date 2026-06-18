@@ -72,6 +72,10 @@ export const api = {
       request<{ available: boolean }>(
         `/occupancies/check?wallId=${wallId}&startTime=${startTime}&endTime=${endTime}`
       ),
+    getAvailableSlots: (wallId: string, date: string, duration?: number) =>
+      request<{ start: string; end: string }[]>(
+        `/occupancies/available-slots?wallId=${wallId}&date=${date}&duration=${duration || 1}`
+      ),
   },
 
   teams: {
@@ -107,6 +111,10 @@ export const api = {
       request<Equipment>(`/equipment/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => request<void>(`/equipment/${id}`, { method: 'DELETE' }),
     getActiveRentals: () => request<EquipmentRental[]>('/equipment/rentals/active'),
+    getAllRentals: (params?: { teamId?: string; equipmentType?: string; status?: string }) => {
+      const query = params ? '?' + new URLSearchParams(params as any).toString() : '';
+      return request<EquipmentRental[]>(`/equipment/rentals/all${query}`);
+    },
     rent: (data: { equipmentId: string; bookingId: string; teamId: string; quantity: number }) =>
       request<EquipmentRental>('/equipment/rentals', {
         method: 'POST',

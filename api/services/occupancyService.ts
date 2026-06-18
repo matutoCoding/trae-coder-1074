@@ -198,6 +198,35 @@ export const occupancyService = {
     return true;
   },
 
+  getAvailableSlots: (wallId: string, date: Date, durationHours: number = 1): { start: string; end: string }[] => {
+    const dayStart = new Date(date);
+    dayStart.setHours(8, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(21, 0, 0, 0);
+
+    const wallOccs = store.occupancies.filter(o => o.wallId === wallId);
+    const slots: { start: string; end: string }[] = [];
+
+    for (let h = 8; h <= 21 - durationHours; h++) {
+      const slotStart = new Date(date);
+      slotStart.setHours(h, 0, 0, 0);
+      const slotEnd = new Date(date);
+      slotEnd.setHours(h + durationHours, 0, 0, 0);
+
+      const hasConflict = wallOccs.some(occ => {
+        const oStart = new Date(occ.startTime);
+        const oEnd = new Date(occ.endTime);
+        return slotStart < oEnd && slotEnd > oStart;
+      });
+
+      if (!hasConflict) {
+        slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() });
+      }
+    }
+
+    return slots;
+  },
+
   getOccupancyByBookingId: (bookingId: string): Occupancy | undefined => {
     return store.occupancies.find(o => o.bookingIds.includes(bookingId));
   },

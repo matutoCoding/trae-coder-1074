@@ -17,6 +17,7 @@ interface AppState {
   occupancies: Occupancy[];
   equipment: Equipment[];
   rentals: EquipmentRental[];
+  allRentals: EquipmentRental[];
   creditLogs: CreditLog[];
   stats: any;
   selectedTeam: Team | null;
@@ -29,8 +30,10 @@ interface AppState {
   fetchOccupancies: (params?: { wallId?: string; teamId?: string; date?: string }) => Promise<void>;
   fetchEquipment: () => Promise<void>;
   fetchRentals: () => Promise<void>;
+  fetchAllRentals: (params?: { teamId?: string; equipmentType?: string; status?: string }) => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchCreditLogs: (teamId: string) => Promise<void>;
+  fetchAvailableSlots: (wallId: string, date: string, duration?: number) => Promise<{ start: string; end: string }[]>;
 
   createWall: (data: Omit<Wall, 'id'>) => Promise<Wall>;
   updateWall: (id: string, data: Partial<Wall>) => Promise<Wall | undefined>;
@@ -56,6 +59,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   occupancies: [],
   equipment: [],
   rentals: [],
+  allRentals: [],
   creditLogs: [],
   stats: null,
   selectedTeam: null,
@@ -78,10 +82,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       set({ loading: true });
       const teams = await api.teams.getAll();
-      set({ teams });
-      if (teams.length > 0 && !get().selectedTeam) {
-        set({ selectedTeam: teams[0] });
+      const currentSelected = get().selectedTeam;
+      let updatedSelected = currentSelected;
+      if (currentSelected) {
+        const fresh = teams.find((t: Team) => t.id === currentSelected.id);
+        if (fresh) {
+          updatedSelected = fresh;
+        }
+      } else if (teams.length > 0) {
+        updatedSelected = teams[0];
       }
+      set({ teams, selectedTeam: updatedSelected });
     } catch (err: any) {
       set({ error: err.message });
     } finally {
@@ -134,6 +145,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchAllRentals: async (params) => {
+    try {
+      const allRentals = await api.equipment.getAllRentals(params);
+      set({ allRentals });
+    } catch (err: any) {
+      set({ error: err.message });
+    }
+  },
+
   fetchStats: async () => {
     try {
       const stats = await api.bookings.getStats();
@@ -149,6 +169,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ creditLogs: logs });
     } catch (err: any) {
       set({ error: err.message });
+    }
+  },
+
+  fetchAvailableSlots: async (wallId, date, duration) => {
+    try {
+      const slots = await api.occupancies.getAvailableSlots(wallId, date, duration);
+      return slots;
+    } catch (err: any) {
+      set({ error: err.message });
+      return [];
     }
   },
 
@@ -207,6 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().fetchTeams();
     get().fetchStats();
     get().fetchRentals();
+    get().fetchEquipment();
     return result;
   },
 

@@ -40,4 +40,20 @@ router.get('/check', (req: Request, res: Response) => {
   res.json({ success: true, data: { available: !hasOverlap } });
 });
 
+router.get('/available-slots', (req: Request, res: Response) => {
+  const { wallId, date, duration } = req.query;
+  
+  if (!wallId || !date) {
+    return res.status(400).json({ success: false, error: '缺少必填参数' });
+  }
+  
+  const slots = occupancyService.getAvailableSlots(
+    String(wallId),
+    new Date(String(date)),
+    Number(duration) || 1
+  );
+  
+  res.json({ success: true, data: slots });
+});
+
 export default router;

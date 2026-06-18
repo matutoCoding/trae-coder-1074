@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
-import { HardHat, Plus, Package, RotateCcw, AlertTriangle, Calendar, Users, Tabs } from 'lucide-react';
+import { HardHat, Plus, Package, RotateCcw, AlertTriangle, Calendar, Users, BookOpen, Download } from 'lucide-react';
 import type { EquipmentType } from '../../shared/types';
 
 const typeLabels: Record<EquipmentType, string> = {
@@ -11,16 +11,24 @@ const typeLabels: Record<EquipmentType, string> = {
   rope: '动力绳',
 };
 
-type TabType = 'equipment' | 'rentals';
+type TabType = 'equipment' | 'rentals' | 'ledger';
+
+const statusOptions = [
+  { value: '', label: '全部' },
+  { value: 'active', label: '租赁中' },
+  { value: 'returned', label: '已归还' },
+];
 
 export default function Equipment() {
   const {
     equipment,
     rentals,
+    allRentals,
     teams,
     bookings,
     fetchEquipment,
     fetchRentals,
+    fetchAllRentals,
     fetchTeams,
     fetchBookings,
     createEquipment,
@@ -34,6 +42,11 @@ export default function Equipment() {
     total: 10,
     status: 'active' as const,
   });
+  const [ledgerFilters, setLedgerFilters] = useState({
+    teamId: '',
+    equipmentType: '',
+    status: '',
+  });
 
   useEffect(() => {
     fetchEquipment();
@@ -41,6 +54,12 @@ export default function Equipment() {
     fetchTeams();
     fetchBookings();
   }, [fetchEquipment, fetchRentals, fetchTeams, fetchBookings]);
+
+  useEffect(() => {
+    if (activeTab === 'ledger') {
+      fetchAllRentals(ledgerFilters);
+    }
+  }, [activeTab, ledgerFilters, fetchAllRentals]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +83,9 @@ export default function Equipment() {
   const handleReturn = async (rentalId: string) => {
     if (confirm('确定归还该装备吗？')) {
       await returnRental(rentalId);
+      if (activeTab === 'ledger') {
+        fetchAllRentals(ledgerFilters);
+      }
     }
   };
 
@@ -96,6 +118,34 @@ export default function Equipment() {
     });
   };
 
+  const getEquipmentType = (equipmentId: string) =>
+    equipment.find((e) => e.id === equipmentId)?.type;
+
+  const handleExportCSV = useCallback(() => {
+    const rows = allRentals;
+    if (rows.length === 0) return;
+    const header = '装备名称,装备类型,数量,团队,租赁时间,归还时间,状态';
+    const csvRows = rows.map((r) => {
+      const eqName = getEquipmentName(r.equipmentId);
+      const eqType = typeLabels[getEquipmentType(r.equipmentId) || 'harness'];
+      const teamName = getTeamName(r.teamId);
+      const rentedAt = new Date(r.rentedAt).toLocaleString('zh-CN');
+      const returnedAt = r.returnedAt ? new Date(r.returnedAt).toLocaleString('zh-CN') : '';
+      const status = r.returnedAt ? '已归还' : '租赁中';
+      return [eqName, eqType, r.quantity, teamName, rentedAt, returnedAt, status]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(',');
+    });
+    const csv = '\uFEFF' + header + '\n' + csvRows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `租赁明细_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [allRentals, equipment, teams]);
+
   const activeRentalCount = rentals.filter((r) => !r.returnedAt).length;
 
   return (
@@ -112,6 +162,15 @@ export default function Equipment() {
           >
             <Plus className="w-5 h-5" />
             新增装备
+          </button>
+        )}
+        {activeTab === 'ledger' && (
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors font-medium"
+          >
+            <Download className="w-5 h-5" />
+            导出明细
           </button>
         )}
       </div>
@@ -143,6 +202,17 @@ export default function Equipment() {
               {activeRentalCount}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('ledger')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'ledger'
+              ? 'bg-slate-700 text-white shadow'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          租赁台账
         </button>
       </div>
 
@@ -308,6 +378,165 @@ export default function Equipment() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'ledger' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <select
+              value={ledgerFilters.teamId}
+              onChange={(e) =>
+                setLedgerFilters((f) => ({ ...f, teamId: e.target.value }))
+              }
+              className="px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:border-orange-500 transition-colors"
+            >
+              <option value="">全部团队</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={ledgerFilters.equipmentType}
+              onChange={(e) =>
+                setLedgerFilters((f) => ({ ...f, equipmentType: e.target.value }))
+              }
+              className="px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:border-orange-500 transition-colors"
+            >
+              <option value="">全部装备类型</option>
+              {(Object.keys(typeLabels) as EquipmentType[]).map((key) => (
+                <option key={key} value={key}>
+                  {typeLabels[key]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={ledgerFilters.status}
+              onChange={(e) =>
+                setLedgerFilters((f) => ({ ...f, status: e.target.value }))
+              }
+              className="px-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:border-orange-500 transition-colors"
+            >
+              {statusOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-700 bg-slate-800/80">
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">装备名称</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">装备类型</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">数量</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">团队</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">关联预约</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">租赁时间</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">归还时间</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">状态</th>
+                    <th className="text-left px-6 py-4 text-sm font-medium text-slate-400">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allRentals.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
+                        <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                        <p>暂无台账记录</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    [...allRentals]
+                      .sort(
+                        (a, b) =>
+                          new Date(b.rentedAt).getTime() - new Date(a.rentedAt).getTime()
+                      )
+                      .map((rental) => {
+                        const eqType = getEquipmentType(rental.equipmentId);
+                        return (
+                          <tr
+                            key={rental.id}
+                            className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors"
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                                  <HardHat className="w-4 h-4 text-blue-400" />
+                                </div>
+                                <span className="font-medium">{getEquipmentName(rental.equipmentId)}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {eqType ? typeLabels[eqType] : '-'}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="px-2 py-1 bg-slate-700 rounded text-sm font-medium">
+                                × {rental.quantity}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-slate-500" />
+                                <span>{getTeamName(rental.teamId)}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-400">
+                              {getBookingInfo(rental.bookingId)}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              {new Date(rental.rentedAt).toLocaleString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-400">
+                              {rental.returnedAt
+                                ? new Date(rental.returnedAt).toLocaleString('zh-CN', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '-'}
+                            </td>
+                            <td className="px-6 py-4">
+                              {rental.returnedAt ? (
+                                <span className="text-xs px-2.5 py-1 rounded-full bg-slate-500/20 text-slate-400 font-medium">
+                                  已归还
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2.5 py-1 rounded-full bg-orange-500/20 text-orange-400 font-medium">
+                                  租赁中
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              {!rental.returnedAt && (
+                                <button
+                                  onClick={() => handleReturn(rental.id)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                  归还
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

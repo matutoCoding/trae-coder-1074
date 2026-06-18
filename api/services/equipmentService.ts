@@ -105,6 +105,23 @@ export const equipmentService = {
     return store.equipmentRentals.filter(r => !r.returnedAt);
   },
 
+  getAllRentals: (filters?: { teamId?: string; equipmentType?: string; status?: string }): EquipmentRental[] => {
+    let result = [...store.equipmentRentals];
+    if (filters?.teamId) {
+      result = result.filter(r => r.teamId === filters.teamId);
+    }
+    if (filters?.equipmentType) {
+      const eqIds = store.equipment.filter(e => e.type === filters.equipmentType).map(e => e.id);
+      result = result.filter(r => eqIds.includes(r.equipmentId));
+    }
+    if (filters?.status === 'active') {
+      result = result.filter(r => !r.returnedAt);
+    } else if (filters?.status === 'returned') {
+      result = result.filter(r => !!r.returnedAt);
+    }
+    return result.sort((a, b) => new Date(b.rentedAt).getTime() - new Date(a.rentedAt).getTime());
+  },
+
   batchRentEquipment: async (
     items: { equipmentId: string; quantity: number }[],
     bookingId: string,
