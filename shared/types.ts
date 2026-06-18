@@ -82,10 +82,24 @@ export interface CreateBookingRequest {
   startTime: string;
   endTime: string;
   equipmentRentals?: { equipmentId: string; quantity: number }[];
+  packageId?: string;
+  peopleCount?: number;
 }
 
 export interface CreateBookingResponse {
   booking: Booking;
   occupancy: Occupancy;
   rentals?: EquipmentRental[];
+}
+
+export interface ActivityPackage {
+  id: string;
+  name: string;
+  description: string;
+  durationHours: number;
+  creditsPerPerson: number;
+  creditDiscount: number;
+  peopleCount: number;
+  equipmentCombos: { equipmentId: string; quantityPerPerson: number }[];
+  status: 'active' | 'inactive';
 }

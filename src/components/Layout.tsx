@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
+  BarChart3,
   Mountain,
   Calendar,
   ClipboardList,
@@ -14,6 +15,7 @@ import { cn } from '../lib/utils';
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: LayoutDashboard },
+  { path: '/analytics', label: '经营分析', icon: BarChart3 },
   { path: '/walls', label: '岩壁道管理', icon: Mountain },
   { path: '/schedule', label: '排期日历', icon: Calendar },
   { path: '/bookings', label: '预约管理', icon: ClipboardList },

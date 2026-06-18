@@ -7,6 +7,7 @@ import type {
   CreditLog,
   Equipment,
   EquipmentRental,
+  ActivityPackage,
 } from '../../shared/types';
 import { api } from '../api';
 
@@ -20,6 +21,8 @@ interface AppState {
   allRentals: EquipmentRental[];
   creditLogs: CreditLog[];
   stats: any;
+  analytics: any;
+  packages: ActivityPackage[];
   selectedTeam: Team | null;
   loading: boolean;
   error: string | null;
@@ -34,6 +37,8 @@ interface AppState {
   fetchStats: () => Promise<void>;
   fetchCreditLogs: (teamId: string) => Promise<void>;
   fetchAvailableSlots: (wallId: string, date: string, duration?: number) => Promise<{ start: string; end: string }[]>;
+  fetchAnalytics: (period: 'day' | 'week' | 'month', date?: string) => Promise<void>;
+  fetchPackages: () => Promise<void>;
 
   createWall: (data: Omit<Wall, 'id'>) => Promise<Wall>;
   updateWall: (id: string, data: Partial<Wall>) => Promise<Wall | undefined>;
@@ -62,6 +67,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   allRentals: [],
   creditLogs: [],
   stats: null,
+  analytics: null,
+  packages: [],
   selectedTeam: null,
   loading: false,
   error: null,
@@ -179,6 +186,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err: any) {
       set({ error: err.message });
       return [];
+    }
+  },
+
+  fetchAnalytics: async (period, date) => {
+    try {
+      set({ loading: true });
+      const analytics = await api.analytics.getAnalytics(period, date);
+      set({ analytics });
+    } catch (err: any) {
+      set({ error: err.message });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  fetchPackages: async () => {
+    try {
+      const packages = await api.packages.getAll();
+      set({ packages });
+    } catch (err: any) {
+      set({ error: err.message });
     }
   },
 

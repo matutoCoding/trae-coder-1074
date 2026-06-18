@@ -12,6 +12,45 @@ const calculateCredits = (startTime: string, endTime: string): number => {
   return hours * 10;
 };
 
+const resolvePackageBooking = (data: CreateBookingRequest): {
+  creditsCost: number;
+  equipmentRentals: { equipmentId: string; quantity: number }[];
+  description: string;
+} => {
+  if (!data.packageId) {
+    return {
+      creditsCost: calculateCredits(data.startTime, data.endTime),
+      equipmentRentals: data.equipmentRentals || [],
+      description: '',
+    };
+  }
+
+  const pkg = store.packages.find(p => p.id === data.packageId);
+  if (!pkg) {
+    return {
+      creditsCost: calculateCredits(data.startTime, data.endTime),
+      equipmentRentals: data.equipmentRentals || [],
+      description: '',
+    };
+  }
+
+  const peopleCount = data.peopleCount || pkg.peopleCount;
+  const baseCredits = pkg.creditsPerPerson * peopleCount;
+  const discountAmount = Math.round(baseCredits * pkg.creditDiscount);
+  const creditsCost = baseCredits - discountAmount;
+
+  const equipmentRentals = pkg.equipmentCombos.map(combo => ({
+    equipmentId: combo.equipmentId,
+    quantity: combo.quantityPerPerson * peopleCount,
+  }));
+
+  return {
+    creditsCost,
+    equipmentRentals,
+    description: ` [${pkg.name} x${peopleCount}人]`,
+  };
+};
+
 export const bookingService = {
   getAllBookings: (): Booking[] => {
     return [...store.bookings].sort((a, b) => 
@@ -41,7 +80,6 @@ export const bookingService = {
     const wallId = data.wallId;
     const startTime = data.startTime;
     const endTime = data.endTime;
-    const equipmentRentals = data.equipmentRentals;
 
     if (new Date(startTime) >= new Date(endTime)) {
       return { success: false, error: '结束时间必须晚于开始时间' };
@@ -60,6 +98,10 @@ export const bookingService = {
       return { success: false, error: '团队不存在' };
     }
 
+    const resolved = resolvePackageBooking(data);
+    const creditsCost = resolved.creditsCost;
+    const equipmentRentals = resolved.equipmentRentals;
+
     const wallRelease = await wallLocks.acquire(wallId);
     try {
       const hasOverlap = occupancyService.hasOverlap(
@@ -71,13 +113,11 @@ export const bookingService = {
         return { success: false, error: '该时段已被占用' };
       }
 
-      const creditsCost = calculateCredits(startTime, endTime);
-
       const deductSuccess = await creditService.deductCredits(
         teamId,
         creditsCost,
         undefined,
-        `预约 ${wall.name}`
+        `预约 ${wall.name}${resolved.description}`
       );
       if (!deductSuccess) {
         return { success: false, error: '团队额度不足' };
@@ -105,7 +145,7 @@ export const bookingService = {
         );
 
         let rentals;
-        if (equipmentRentals && equipmentRentals.length > 0) {
+        if (equipmentRentals.length > 0) {
           const rentResult = await equipmentService.batchRentEquipment(
             equipmentRentals,
             booking.id,

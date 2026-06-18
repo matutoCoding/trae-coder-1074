@@ -53,7 +53,8 @@ export default function Equipment() {
     fetchRentals();
     fetchTeams();
     fetchBookings();
-  }, [fetchEquipment, fetchRentals, fetchTeams, fetchBookings]);
+    fetchAllRentals({});
+  }, [fetchEquipment, fetchRentals, fetchTeams, fetchBookings, fetchAllRentals]);
 
   useEffect(() => {
     if (activeTab === 'ledger') {
@@ -124,15 +125,16 @@ export default function Equipment() {
   const handleExportCSV = useCallback(() => {
     const rows = allRentals;
     if (rows.length === 0) return;
-    const header = '装备名称,装备类型,数量,团队,租赁时间,归还时间,状态';
+    const header = '装备名称,装备类型,数量,团队,关联预约,租赁时间,归还时间,状态';
     const csvRows = rows.map((r) => {
       const eqName = getEquipmentName(r.equipmentId);
       const eqType = typeLabels[getEquipmentType(r.equipmentId) || 'harness'];
       const teamName = getTeamName(r.teamId);
+      const bookingRef = getBookingInfo(r.bookingId);
       const rentedAt = new Date(r.rentedAt).toLocaleString('zh-CN');
       const returnedAt = r.returnedAt ? new Date(r.returnedAt).toLocaleString('zh-CN') : '';
       const status = r.returnedAt ? '已归还' : '租赁中';
-      return [eqName, eqType, r.quantity, teamName, rentedAt, returnedAt, status]
+      return [eqName, eqType, r.quantity, teamName, bookingRef, rentedAt, returnedAt, status]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(',');
     });
@@ -144,7 +146,7 @@ export default function Equipment() {
     a.download = `租赁明细_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [allRentals, equipment, teams]);
+  }, [allRentals, equipment, teams, bookings]);
 
   const activeRentalCount = rentals.filter((r) => !r.returnedAt).length;
 

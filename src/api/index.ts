@@ -8,6 +8,7 @@ import type {
   EquipmentRental,
   CreateBookingRequest,
   CreateBookingResponse,
+  ActivityPackage,
 } from '../../shared/types';
 
 const API_BASE = '/api';
@@ -126,5 +127,24 @@ export const api = {
       request<EquipmentRental[]>(`/equipment/rentals/booking/${bookingId}`),
     getRentalsByTeam: (teamId: string) =>
       request<EquipmentRental[]>(`/equipment/rentals/team/${teamId}`),
+  },
+
+  packages: {
+    getAll: () => request<ActivityPackage[]>('/packages'),
+    getActive: () => request<ActivityPackage[]>('/packages/active'),
+    getById: (id: string) => request<ActivityPackage>(`/packages/${id}`),
+    create: (data: Omit<ActivityPackage, 'id'>) =>
+      request<ActivityPackage>('/packages', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<ActivityPackage>) =>
+      request<ActivityPackage>(`/packages/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => request<void>(`/packages/${id}`, { method: 'DELETE' }),
+  },
+
+  analytics: {
+    getAnalytics: (period: 'day' | 'week' | 'month', date?: string) => {
+      const params = new URLSearchParams({ period });
+      if (date) params.set('date', date);
+      return request<any>(`/analytics?${params.toString()}`);
+    },
   },
 };

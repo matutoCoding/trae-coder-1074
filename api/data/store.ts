@@ -1,4 +1,4 @@
-import type { Wall, Team, Booking, Occupancy, CreditLog, Equipment, EquipmentRental } from '../../shared/types';
+import type { Wall, Team, Booking, Occupancy, CreditLog, Equipment, EquipmentRental, ActivityPackage } from '../../shared/types';
 
 export interface DataStore {
   walls: Wall[];
@@ -8,6 +8,7 @@ export interface DataStore {
   creditLogs: CreditLog[];
   equipment: Equipment[];
   equipmentRentals: EquipmentRental[];
+  packages: ActivityPackage[];
 }
 
 const generateId = (): string => {
@@ -59,6 +60,52 @@ const initialEquipment: Equipment[] = [
 
 const initialEquipmentRentals: EquipmentRental[] = [];
 
+const initialPackages: ActivityPackage[] = [
+  {
+    id: generateId(),
+    name: '团建半日体验',
+    description: '3小时攀岩体验，含全套安全装备，适合企业团建',
+    durationHours: 3,
+    creditsPerPerson: 30,
+    creditDiscount: 0.15,
+    peopleCount: 10,
+    equipmentCombos: [
+      { equipmentId: initialEquipment[0].id, quantityPerPerson: 1 },
+      { equipmentId: initialEquipment[1].id, quantityPerPerson: 1 },
+      { equipmentId: initialEquipment[2].id, quantityPerPerson: 1 },
+    ],
+    status: 'active',
+  },
+  {
+    id: generateId(),
+    name: '进阶训练套餐',
+    description: '2小时进阶训练，含安全带和攀岩鞋，适合有基础的团队',
+    durationHours: 2,
+    creditsPerPerson: 20,
+    creditDiscount: 0.1,
+    peopleCount: 5,
+    equipmentCombos: [
+      { equipmentId: initialEquipment[0].id, quantityPerPerson: 1 },
+      { equipmentId: initialEquipment[1].id, quantityPerPerson: 1 },
+    ],
+    status: 'active',
+  },
+  {
+    id: generateId(),
+    name: '少儿探索营',
+    description: '2小时少儿攀岩体验，含头盔和镁粉袋',
+    durationHours: 2,
+    creditsPerPerson: 15,
+    creditDiscount: 0.2,
+    peopleCount: 8,
+    equipmentCombos: [
+      { equipmentId: initialEquipment[2].id, quantityPerPerson: 1 },
+      { equipmentId: initialEquipment[3].id, quantityPerPerson: 1 },
+    ],
+    status: 'active',
+  },
+];
+
 export const store: DataStore = {
   walls: initialWalls,
   teams: initialTeams,
@@ -67,6 +114,7 @@ export const store: DataStore = {
   creditLogs: initialCreditLogs,
   equipment: initialEquipment,
   equipmentRentals: initialEquipmentRentals,
+  packages: initialPackages,
 };
 
 export { generateId, formatDate, getDateStr };
