@@ -28,6 +28,7 @@ interface AppState {
   fetchBookings: (params?: { teamId?: string; wallId?: string }) => Promise<void>;
   fetchOccupancies: (params?: { wallId?: string; teamId?: string; date?: string }) => Promise<void>;
   fetchEquipment: () => Promise<void>;
+  fetchRentals: () => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchCreditLogs: (teamId: string) => Promise<void>;
 
@@ -124,6 +125,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchRentals: async () => {
+    try {
+      const rentals = await api.equipment.getActiveRentals();
+      set({ rentals });
+    } catch (err: any) {
+      set({ error: err.message });
+    }
+  },
+
   fetchStats: async () => {
     try {
       const stats = await api.bookings.getStats();
@@ -196,6 +206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().fetchOccupancies({ wallId: data.wallId });
     get().fetchTeams();
     get().fetchStats();
+    get().fetchRentals();
     return result;
   },
 
@@ -206,6 +217,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().fetchOccupancies();
       get().fetchTeams();
       get().fetchStats();
+      get().fetchEquipment();
+      get().fetchRentals();
       return result;
     } catch {
       return undefined;
@@ -222,6 +235,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const rental = await api.equipment.returnRental(id);
       get().fetchEquipment();
+      get().fetchRentals();
       return rental;
     } catch {
       return undefined;

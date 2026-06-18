@@ -1,22 +1,37 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
-import { ChevronLeft, ChevronRight, Plus, Clock, Users, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Clock, Users, Layers, HardHat, Check } from 'lucide-react';
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8);
 
 export default function Schedule() {
-  const { walls, occupancies, fetchWalls, fetchOccupancies, selectedTeam, teams, createBooking } = useAppStore();
+  const {
+    walls,
+    occupancies,
+    teams,
+    equipment,
+    fetchWalls,
+    fetchOccupancies,
+    fetchTeams,
+    fetchEquipment,
+    createBooking,
+  } = useAppStore();
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedWall, setSelectedWall] = useState<string>('');
-  const [selectedSlot, setSelectedSlot] = useState<{ start: number; end: number } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ start: number; end: number; dayIdx: number } | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
-  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+  const [selectionStart, setSelectionStart] = useState<{ hour: number; dayIdx: number } | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingTeamId, setBookingTeamId] = useState('');
+  const [selectedEquipment, setSelectedEquipment] = useState<Record<string, number>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchWalls();
-  }, [fetchWalls]);
+    fetchTeams();
+    fetchEquipment();
+  }, [fetchWalls, fetchTeams, fetchEquipment]);
 
   useEffect(() => {
     if (selectedWall) {
@@ -37,7 +52,7 @@ export default function Schedule() {
   }, [teams, bookingTeamId]);
 
   const weekDays = useMemo(() => {
-    const days = [];
+    const days: Date[] = [];
     const startOfWeek = new Date(currentDate);
     startOfWeek.setDate(currentDate.getDate() - currentDate.getDay() + 1);
     for (let i = 0; i < 7; i++) {
@@ -54,22 +69,24 @@ export default function Schedule() {
     setCurrentDate(newDate);
   };
 
-  const handleSlotMouseDown = (hour: number) => {
+  const handleSlotMouseDown = (hour: number, dayIdx: number) => {
     setIsSelecting(true);
-    setSelectionStart(hour);
-    setSelectedSlot({ start: hour, end: hour + 1 });
+    setSelectionStart({ hour, dayIdx });
+    setSelectedSlot({ start: hour, end: hour + 1, dayIdx });
   };
 
-  const handleSlotMouseEnter = (hour: number) => {
+  const handleSlotMouseEnter = (hour: number, dayIdx: number) => {
     if (isSelecting && selectionStart !== null) {
-      const start = Math.min(selectionStart, hour);
-      const end = Math.max(selectionStart, hour) + 1;
-      setSelectedSlot({ start, end });
+      if (dayIdx !== selectionStart.dayIdx) return;
+      const start = Math.min(selectionStart.hour, hour);
+      const end = Math.max(selectionStart.hour, hour) + 1;
+      setSelectedSlot({ start, end, dayIdx });
     }
   };
 
   const handleSlotMouseUp = () => {
     if (isSelecting && selectedSlot) {
+      setSelectedEquipment({});
       setShowBookingModal(true);
     }
     setIsSelecting(false);
@@ -88,8 +105,9 @@ export default function Schedule() {
     });
   };
 
-  const isSlotInSelection = (hour: number) => {
+  const isSlotInSelection = (hour: number, dayIdx: number) => {
     if (!selectedSlot) return false;
+    if (selectedSlot.dayIdx !== dayIdx) return false;
     return hour >= selectedSlot.start && hour < selectedSlot.end;
   };
 
@@ -97,14 +115,41 @@ export default function Schedule() {
     return getOccupanciesForSlot(date, hour).length > 0;
   };
 
+  const toggleEquipment = (equipmentId: string) => {
+    setSelectedEquipment((prev) => {
+      if (prev[equipmentId]) {
+        const next = { ...prev };
+        delete next[equipmentId];
+        return next;
+      }
+      return { ...prev, [equipmentId]: 1 };
+    });
+  };
+
+  const setEquipmentQty = (equipmentId: string, qty: number) => {
+    if (qty <= 0) {
+      const next = { ...selectedEquipment };
+      delete next[equipmentId];
+      setSelectedEquipment(next);
+    } else {
+      setSelectedEquipment((prev) => ({ ...prev, [equipmentId]: qty }));
+    }
+  };
+
   const handleCreateBooking = async () => {
     if (!selectedSlot || !selectedWall || !bookingTeamId) return;
+    setSubmitting(true);
 
-    const date = weekDays.find((d) => d.getDay() === new Date().getDay()) || weekDays[0];
+    const date = weekDays[selectedSlot.dayIdx];
     const startTime = new Date(date);
     startTime.setHours(selectedSlot.start, 0, 0, 0);
     const endTime = new Date(date);
     endTime.setHours(selectedSlot.end, 0, 0, 0);
+
+    const equipmentRentals = Object.entries(selectedEquipment).map(([equipmentId, quantity]) => ({
+      equipmentId,
+      quantity,
+    }));
 
     try {
       await createBooking({
@@ -112,15 +157,21 @@ export default function Schedule() {
         wallId: selectedWall,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
+        equipmentRentals,
       });
       setShowBookingModal(false);
       setSelectedSlot(null);
+      setSelectedEquipment({});
+      fetchEquipment();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const selectedWallData = walls.find((w) => w.id === selectedWall);
+  const selectedBookingTeam = teams.find((t) => t.id === bookingTeamId);
 
   return (
     <div className="space-y-6 animate-fadeIn h-full flex flex-col">
@@ -171,23 +222,31 @@ export default function Schedule() {
           onMouseUp={handleSlotMouseUp}
           onMouseLeave={handleSlotMouseUp}
         >
-          <div className="min-w-[800px]">
+          <div className="min-w-[900px]">
             <div className="flex border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
               <div className="w-16 flex-shrink-0"></div>
               {weekDays.map((day, idx) => {
                 const isToday = day.toDateString() === new Date().toDateString();
+                const isSelectedDay = selectedSlot?.dayIdx === idx;
                 return (
                   <div
                     key={idx}
-                    className={`flex-1 p-3 text-center border-l border-slate-700 first:border-l-0 ${
-                      isToday ? 'bg-orange-500/10' : ''
+                    className={`flex-1 p-3 text-center border-l border-slate-700 first:border-l-0 transition-colors ${
+                      isToday
+                        ? 'bg-orange-500/10'
+                        : isSelectedDay
+                        ? 'bg-orange-500/5'
+                        : ''
                     }`}
                   >
-                    <div className="text-xs text-slate-400">
+                    <div className={`text-xs ${isSelectedDay ? 'text-orange-400' : 'text-slate-400'}`}>
                       {['周一', '周二', '周三', '周四', '周五', '周六', '周日'][day.getDay() === 0 ? 6 : day.getDay() - 1]}
                     </div>
                     <div className={`text-lg font-semibold mt-1 ${isToday ? 'text-orange-400' : ''}`}>
                       {day.getDate()}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {day.toLocaleDateString('zh-CN', { month: 'numeric' })}月
                     </div>
                   </div>
                 );
@@ -195,13 +254,13 @@ export default function Schedule() {
             </div>
 
             {HOURS.map((hour) => (
-              <div key={hour} className="flex border-b border-slate-700/50 h-14">
+              <div key={hour} className="flex border-b border-slate-700/50 h-16">
                 <div className="w-16 flex-shrink-0 text-xs text-slate-500 text-right pr-3 pt-2">
                   {hour}:00
                 </div>
                 {weekDays.map((day, dayIdx) => {
                   const occupied = isSlotOccupied(day, hour);
-                  const inSelection = isSlotInSelection(hour);
+                  const inSelection = isSlotInSelection(hour, dayIdx);
                   const occ = getOccupanciesForSlot(day, hour)[0];
                   const team = teams.find((t) => t.id === occ?.teamId);
 
@@ -212,15 +271,15 @@ export default function Schedule() {
                         occupied
                           ? 'bg-rose-500/20'
                           : inSelection
-                          ? 'bg-orange-500/30'
+                          ? 'bg-orange-500/30 ring-2 ring-orange-500/50 ring-inset'
                           : 'hover:bg-slate-700/30'
                       }`}
-                      onMouseDown={() => !occupied && handleSlotMouseDown(hour)}
-                      onMouseEnter={() => !occupied && handleSlotMouseEnter(hour)}
+                      onMouseDown={() => !occupied && handleSlotMouseDown(hour, dayIdx)}
+                      onMouseEnter={() => !occupied && handleSlotMouseEnter(hour, dayIdx)}
                     >
                       {occ && isSlotOccupied(day, hour) && new Date(occ.startTime).getHours() === hour && (
                         <div
-                          className={`absolute inset-x-1 top-1 bottom-1 rounded px-2 py-1 text-xs overflow-hidden ${
+                          className={`absolute inset-x-1 top-1 bottom-1 rounded px-2 py-1 text-xs overflow-hidden z-[1] ${
                             occ.isMerged
                               ? 'bg-gradient-to-r from-rose-500/40 to-orange-500/40 border border-rose-400/30'
                               : 'bg-rose-500/30 border border-rose-500/30'
@@ -264,7 +323,7 @@ export default function Schedule() {
           <span>合并占用</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-orange-500/30"></div>
+          <div className="w-4 h-4 rounded bg-orange-500/30 ring-2 ring-orange-500/50"></div>
           <span>选中时段</span>
         </div>
         <div className="flex items-center gap-2">
@@ -275,14 +334,25 @@ export default function Schedule() {
 
       {showBookingModal && selectedSlot && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 shadow-2xl">
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-lg border border-slate-700 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-6">创建预约</h3>
-            
+
             <div className="space-y-4">
               <div className="bg-slate-700/30 rounded-lg p-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">岩壁道</span>
                   <span className="font-medium">{selectedWallData?.name}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">日期</span>
+                  <span className="font-medium text-orange-400">
+                    {weekDays[selectedSlot.dayIdx].toLocaleDateString('zh-CN', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      weekday: 'long',
+                    })}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">时段</span>
@@ -294,9 +364,9 @@ export default function Schedule() {
                   <span className="text-slate-400">时长</span>
                   <span className="font-medium">{selectedSlot.end - selectedSlot.start} 小时</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm pt-2 border-t border-slate-600/50">
                   <span className="text-slate-400">消耗额度</span>
-                  <span className="font-medium text-orange-400">
+                  <span className="font-bold text-orange-400 text-lg">
                     {(selectedSlot.end - selectedSlot.start) * 10} 额度
                   </span>
                 </div>
@@ -309,12 +379,100 @@ export default function Schedule() {
                   onChange={(e) => setBookingTeamId(e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-700/50 border border-slate-600 rounded-lg focus:outline-none focus:border-orange-500"
                 >
+                  {teams.length === 0 && <option value="">加载中...</option>}
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
-                      {team.name} (剩余 {team.totalCredits - team.usedCredits} 额度)
+                      {team.name} (剩余 {team.totalCredits - team.usedCredits} / {team.totalCredits} 额度)
                     </option>
                   ))}
                 </select>
+                {selectedBookingTeam && (
+                  <div className="mt-1.5 text-xs text-slate-500">
+                    预约后可用余额将变为：{selectedBookingTeam.totalCredits - selectedBookingTeam.usedCredits - (selectedSlot.end - selectedSlot.start) * 10} 额度
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-2 flex items-center gap-1.5">
+                  <HardHat className="w-4 h-4" />
+                  安全装备租赁（可选）
+                </label>
+                <div className="space-y-2">
+                  {equipment.map((eq) => {
+                    const checked = !!selectedEquipment[eq.id];
+                    const qty = selectedEquipment[eq.id] || 0;
+                    const disabled = eq.available === 0;
+                    return (
+                      <div
+                        key={eq.id}
+                        className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                          checked
+                            ? 'bg-orange-500/10 border-orange-500/30'
+                            : disabled
+                            ? 'bg-slate-800/50 border-slate-700/50 opacity-50'
+                            : 'bg-slate-700/20 border-slate-700/50 hover:bg-slate-700/30'
+                        }`}
+                      >
+                        <label
+                          className={`flex items-center gap-3 flex-1 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={(e) => {
+                            if (disabled) e.preventDefault();
+                          }}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                              checked
+                                ? 'bg-orange-500 border-orange-500'
+                                : 'border-slate-500'
+                            }`}
+                          >
+                            {checked && <Check className="w-3.5 h-3.5 text-white" />}
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={checked}
+                              disabled={disabled}
+                              onChange={() => !disabled && toggleEquipment(eq.id)}
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">{eq.name}</div>
+                            <div className="text-xs text-slate-500">
+                              可租 {eq.available} / 共 {eq.total}
+                            </div>
+                          </div>
+                        </label>
+                        {checked && (
+                          <div className="flex items-center gap-1 ml-3">
+                            <button
+                              onClick={() => setEquipmentQty(eq.id, qty - 1)}
+                              className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-sm"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              max={eq.available}
+                              value={qty}
+                              onChange={(e) =>
+                                setEquipmentQty(eq.id, Math.min(eq.available, Math.max(1, Number(e.target.value) || 1)))
+                              }
+                              className="w-12 px-2 py-1 text-center bg-slate-700/50 border border-slate-600 rounded text-sm focus:outline-none focus:border-orange-500"
+                            />
+                            <button
+                              onClick={() => setEquipmentQty(eq.id, Math.min(eq.available, qty + 1))}
+                              className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-sm"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -322,6 +480,7 @@ export default function Schedule() {
                   onClick={() => {
                     setShowBookingModal(false);
                     setSelectedSlot(null);
+                    setSelectedEquipment({});
                   }}
                   className="flex-1 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
                 >
@@ -329,10 +488,11 @@ export default function Schedule() {
                 </button>
                 <button
                   onClick={handleCreateBooking}
-                  className="flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-500/50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  确认预约
+                  {submitting ? '提交中...' : '确认预约'}
                 </button>
               </div>
             </div>

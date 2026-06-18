@@ -53,10 +53,6 @@ export default function Credits() {
     setNewTeamCredits(0);
   };
 
-  const usagePercent = selectedTeam && selectedTeam.totalCredits > 0
-    ? (selectedTeam.usedCredits / selectedTeam.totalCredits) * 100
-    : 0;
-
   return (
     <div className="space-y-6 animate-fadeIn">
       <div className="flex items-center justify-between">
@@ -77,35 +73,40 @@ export default function Credits() {
         <div className="lg:col-span-1 space-y-3">
           <h3 className="text-sm font-medium text-slate-400 px-1">团队列表</h3>
           <div className="space-y-2">
-            {teams.map((team) => (
-              <button
-                key={team.id}
-                onClick={() => handleSelectTeam(team)}
-                className={`w-full p-4 rounded-xl text-left transition-all ${
-                  selectedTeam?.id === team.id
-                    ? 'bg-orange-500/20 border border-orange-500/30'
-                    : 'bg-slate-800/50 border border-slate-700/50 hover:border-slate-600'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500/30 to-amber-500/30 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-orange-400" />
+            {teams.map((team) => {
+              const teamUsagePercent = team.totalCredits > 0
+                ? (team.usedCredits / team.totalCredits) * 100
+                : 0;
+              return (
+                <button
+                  key={team.id}
+                  onClick={() => handleSelectTeam(team)}
+                  className={`w-full p-4 rounded-xl text-left transition-all ${
+                    selectedTeam?.id === team.id
+                      ? 'bg-orange-500/20 border border-orange-500/30'
+                      : 'bg-slate-800/50 border border-slate-700/50 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500/30 to-amber-500/30 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-orange-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{team.name}</p>
+                      <p className="text-xs text-slate-400">
+                        剩余 {team.totalCredits - team.usedCredits} / {team.totalCredits}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{team.name}</p>
-                    <p className="text-xs text-slate-400">
-                      剩余 {team.totalCredits - team.usedCredits} / {team.totalCredits}
-                    </p>
+                  <div className="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(teamUsagePercent, 100)}%` }}
+                    />
                   </div>
-                </div>
-                <div className="mt-3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(usagePercent, 100)}%` }}
-                  />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
